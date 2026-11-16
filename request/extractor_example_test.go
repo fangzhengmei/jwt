@@ -30,3 +30,16 @@ func ExampleArgumentExtractor() {
 	}
 	// Output: A
 }
+
+func ExampleStrictExtractor() {
+	req := makeExampleRequest("GET", "/", map[string]string{"Authorization": "Bearer A"},
+		url.Values{"access_token": {"B"}})
+
+	tokenString, err := StrictOAuth2Extractor.ExtractToken(req)
+	if err == nil {
+		fmt.Println(tokenString)
+	} else {
+		fmt.Println(err)
+	}
+	// Output: conflicting tokens present in request
+}

@@ -11,10 +11,14 @@ import (
 // instead of a token string.  The Extractor interface allows you to define
 // the logic for extracting a token.  Several useful implementations are provided.
 //
-// You can provide options to modify parsing behavior
+// You can provide options to modify parsing behavior.
+//
+// By default the extractor chooses a single token, using its own precedence
+// rules. Pass WithStrictExtraction to instead reject requests that carry a
+// different token in more than one of the locations the extractor inspects.
 func ParseFromRequest(req *http.Request, extractor Extractor, keyFunc jwt.Keyfunc, options ...ParseFromRequestOption) (token *jwt.Token, err error) {
 	// Create basic parser struct
-	p := &fromRequestParser{req, extractor, nil, nil}
+	p := &fromRequestParser{req, extractor, nil, nil, false}
 
 	// Handle options
 	for _, option := range options {
@@ -30,7 +34,11 @@ func ParseFromRequest(req *http.Request, extractor Extractor, keyFunc jwt.Keyfun
 	}
 
 	// perform extract
-	tokenString, err := p.extractor.ExtractToken(req)
+	extractor = p.extractor
+	if p.strict {
+		extractor = StrictExtractor{Extractors: []Extractor{p.extractor}}
+	}
+	tokenString, err := extractor.ExtractToken(req)
 	if err != nil {
 		return nil, err
 	}
@@ -51,6 +59,7 @@ type fromRequestParser struct {
 	extractor Extractor
 	claims    jwt.Claims
 	parser    *jwt.Parser
+	strict    bool
 }
 
 type ParseFromRequestOption func(*fromRequestParser)
@@ -66,5 +75,20 @@ func WithClaims(claims jwt.Claims) ParseFromRequestOption {
 func WithParser(parser *jwt.Parser) ParseFromRequestOption {
 	return func(p *fromRequestParser) {
 		p.parser = parser
+	}
+}
+
+// WithStrictExtraction makes ParseFromRequest reject a request that carries
+// different tokens in more than one of the locations the extractor inspects.
+// Extraction errors, including ErrConflictingTokens and ErrMalformedBearer, are
+// returned before the key function is called, so a conflicting request never
+// reaches signature verification.
+//
+// The option only changes how the token is extracted. An extractor that cannot
+// report more than one token is unaffected, so combine it with an extractor
+// that can, such as StrictExtractor, OAuth2Extractor or a MultiExtractor.
+func WithStrictExtraction() ParseFromRequestOption {
+	return func(p *fromRequestParser) {
+		p.strict = true
 	}
 }
